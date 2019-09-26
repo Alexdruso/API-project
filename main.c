@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 /*definition part*/
+#define BEGIN -1
 #define ADDENT 1
 #define DELENT 2
 #define ADDREL 3
@@ -933,7 +934,7 @@ int main(){
 
     //freopen("input1.txt","r",stdin);
 
-    int command=10;
+    int command=BEGIN;
     ent*hash_table[MAGIC_NUMBER]={NULL};
 
     while(command!=END){
