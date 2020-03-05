@@ -3,7 +3,7 @@ This project was made as homework for an algorithm course held at Politecnico di
 
 # Briefing
 
-Its inteded porpouse is to simulate the interactions and relationships between abstract entities initialized via the command addent "<ent_name>".
+Its porpouse is to simulate the interactions and relationships between abstract entities initialized via the command addent "<ent_name>".
 
 Other command available are:
 
