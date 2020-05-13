@@ -16,7 +16,3 @@ Other command available are:
 -report, whih prints on screen iteratively the name of the type of relationship, the entities with the highest incoming relationships of that type and the number of the maximum incoming relationships;
 
 -end, which terminates the program.
-
-# Detailed description (in Italian)
-
-http://home.deib.polimi.it/martinen/courses/api/ProvaFinale2019.pdf
