@@ -1,5 +1,9 @@
 # Introduction
-This project was made as homework for an algorithm course held at Politecnico di Milano between 2018 and 2019 and gained a mark of 30 cum laude/30 because of its efficiency.
+This project was part of a course on theoretical computer science and algorithms I had the opportunity to follow during my bachelor degree.
+The aim of the project was to create a program to manipulate a graph by adding and removing nodes and keeping track of the relationships between the entities. The program is then able to identify the most popular entities according to a given relationship type.
+The focus was on performances, both in terms of computational time and memory footprint, assessed through an evaluator.
+
+Final mark: 30/30 cum laude
 
 # Commands
 
