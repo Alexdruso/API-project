@@ -3,9 +3,7 @@ This project was made as homework for an algorithm course held at Politecnico di
 
 # Commands
 
-Its porpouse is to simulate the interactions and relationships between abstract entities initialized via the command addent "<ent_name>".
-
-Other command available are:
+- addent "<ent_name>", which initializes an entity in the graph;
 
 - addrel "<origin_ent>" "<destination_ent>" "<rel_name>", which adds a relationship named <rel_name> between the two entities;
 
