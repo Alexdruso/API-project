@@ -13,7 +13,7 @@ Other command available are:
 
 - delent "<ent_name>", which deletes <ent_name> from the monitored entities and also deletes all the relationships in which it is involved;
 
-- report, whih prints on screen iteratively the name of the type of relationship, the entities with the highest incoming relationships of that type and the number of the maximum incoming relationships;
+- report, which prints on screen iteratively the name of the type of relationship, the entities with the highest incoming relationships of that type and the number of the maximum incoming relationships;
 
 - end, which terminates the program.
  
