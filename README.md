@@ -118,9 +118,13 @@ The implementation favors incremental, performance-oriented data structures:
 
 - **Entities** live in a hash table (`ENTITY_TABLE_SIZE` buckets), each bucket a singly
   linked list kept sorted by name.
-- **Relationships** are stored per origin entity; each relationship type owns its own
-  hash table of destination entities (`TARGET_TABLE_SIZE` buckets), again with sorted
-  buckets.
+- **Relationships** are stored per entity. For each relationship type an entity takes
+  part in, it keeps two compact open-addressing hash sets of `entity *` (stored inline,
+  power-of-two, grown and rehashed at ~0.7 load): `targets` (the entities it points to)
+  and `sources` (the entities pointing back at it). `sources` is a **reverse index**:
+  it lets `delent` reach an entity's in-neighbours directly, so removing an entity costs
+  O(its degree) instead of scanning the whole graph. Storing `entity *` inline (no
+  per-edge node, no fixed-width bucket table) also keeps the structure small.
 - A separate **"current maxima"** structure (`relation_max`) is maintained incrementally
   as relationships are added and removed, so that `report` mostly reads off precomputed
   results instead of scanning the whole graph on every call. A full rescan
@@ -165,9 +169,9 @@ make bench      # pip install matplotlib, run the harness, regenerate the plot b
 
 | Implementation | Latency | Peak memory |
 | --- | --- | --- |
-| C (`bin/api`) | **61 ms** | **16 MB** |
-| Python (`python/api.py`) | 293 ms | 26 MB |
-| Ratio (Python / C) | ~4.8× slower | ~1.6× more |
+| C (`bin/api`) | **48 ms** | **13 MB** |
+| Python (`python/api.py`) | 278 ms | 26 MB |
+| Ratio (Python / C) | ~5.8× slower | ~2.0× more |
 
 Plotting every run on a memory-vs-latency scatter, the two implementations form two
 clearly separated clusters: C sits in the fast, light corner; Python trades both away for
