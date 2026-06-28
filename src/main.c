@@ -159,6 +159,8 @@ int pop_from_max(max_rel* max_struct,char*entity){
 
     }
 
+    /*entity non presente tra i massimi: nessun massimo rimosso*/
+    return 0;
 }
 
 max_rel* find_rel_in_max(char*rel_name){
