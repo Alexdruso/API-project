@@ -116,15 +116,15 @@ A larger, runnable command stream is provided in
 
 The implementation favors incremental, performance-oriented data structures:
 
-- **Entities** live in a hash table (`MAGIC_NUMBER` buckets), each bucket a singly
+- **Entities** live in a hash table (`ENTITY_TABLE_SIZE` buckets), each bucket a singly
   linked list kept sorted by name.
 - **Relationships** are stored per origin entity; each relationship type owns its own
-  hash table of destination entities (`MAGIC_NUMBER_2` buckets), again with sorted
+  hash table of destination entities (`TARGET_TABLE_SIZE` buckets), again with sorted
   buckets.
-- A separate **"current maxima"** structure (`max_rel`) is maintained incrementally as
-  relationships are added and removed, so that `report` mostly reads off precomputed
+- A separate **"current maxima"** structure (`relation_max`) is maintained incrementally
+  as relationships are added and removed, so that `report` mostly reads off precomputed
   results instead of scanning the whole graph on every call. A full rescan
-  (`refresh_max`) is only triggered when the reigning maximum for a relationship type
+  (`recompute_max`) is only triggered when the reigning maximum for a relationship type
   is actually torn down.
 
 ## A readable Python port
