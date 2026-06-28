@@ -49,9 +49,9 @@ def generate_workload(path):
     deletions, so both the edge bookkeeping and the report logic get exercised.
     """
     rng = random.Random(SEED)
-    n_entities = 4000
-    n_addrel = 60000
-    n_reports = 40
+    n_entities = 3000
+    n_addrel = 120000
+    n_reports = 50
     relations = ["likes", "fights", "knows", "kills"]
 
     report_every = n_addrel // n_reports
