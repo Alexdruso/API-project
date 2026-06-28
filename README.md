@@ -126,6 +126,9 @@ The implementation favors incremental, performance-oriented data structures:
   results instead of scanning the whole graph on every call. A full rescan
   (`recompute_max`) is only triggered when the reigning maximum for a relationship type
   is actually torn down.
+- **Input** is read through a block-buffered, unlocked reader (`next_char`, 64 KiB blocks)
+  rather than per-character `getchar`/`scanf`, which avoids libc stream-locking overhead on
+  the hot parsing path while keeping memory flat (one fixed buffer, not the whole input).
 
 ## A readable Python port
 
@@ -162,9 +165,9 @@ make bench      # pip install matplotlib, run the harness, regenerate the plot b
 
 | Implementation | Latency | Peak memory |
 | --- | --- | --- |
-| C (`bin/api`) | **75 ms** | **16 MB** |
-| Python (`python/api.py`) | 288 ms | 26 MB |
-| Ratio (Python / C) | ~3.8× slower | ~1.6× more |
+| C (`bin/api`) | **61 ms** | **16 MB** |
+| Python (`python/api.py`) | 293 ms | 26 MB |
+| Ratio (Python / C) | ~4.8× slower | ~1.6× more |
 
 Plotting every run on a memory-vs-latency scatter, the two implementations form two
 clearly separated clusters: C sits in the fast, light corner; Python trades both away for
