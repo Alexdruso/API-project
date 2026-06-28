@@ -7,7 +7,9 @@ $(BIN): $(SRC)
 	@mkdir -p bin
 	$(CC) $(CFLAGS) -o $@ $<
 
-.PHONY: run test format format-check clean
+PY      := python/api.py
+
+.PHONY: run test test-py bench format format-check clean
 run: $(BIN)
 	./$(BIN)
 
@@ -37,6 +39,27 @@ test: $(BIN)
 	done; \
 	if [ $$fail -eq 0 ]; then echo "OK: all snapshots match"; fi; \
 	exit $$fail
+
+# Same snapshots, run against the readable Python port, to prove the two
+# implementations agree on every case.
+test-py:
+	@fail=0; \
+	for in in $(TEST_INPUTS); do \
+	  exp="$${in%.txt}.expected.txt"; \
+	  [ -f "$$exp" ] || continue; \
+	  if python3 $(PY) < "$$in" | diff -u "$$exp" - >/dev/null; then \
+	    echo "PASS: $$in"; \
+	  else \
+	    echo "FAIL: $$in"; python3 $(PY) < "$$in" | diff -u "$$exp" - || true; fail=1; \
+	  fi; \
+	done; \
+	if [ $$fail -eq 0 ]; then echo "OK: Python output matches all snapshots"; fi; \
+	exit $$fail
+
+# Benchmark C vs Python (peak memory + latency) and regenerate the scatter plot.
+bench: $(BIN)
+	python3 -m pip install --quiet -r bench/requirements.txt
+	python3 bench/benchmark.py
 
 clean:
 	rm -rf bin
