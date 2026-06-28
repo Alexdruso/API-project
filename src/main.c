@@ -10,105 +10,104 @@
 #define DELREL 4
 #define REPORT 5
 #define END 0
-#define MAGIC_NUMBER 1009
-#define MAGIC_NUMBER_2 109
-#define BUFFER_SIZE 40
-#define UNSUCCESSFUL -1
+#define ENTITY_TABLE_SIZE 1009
+#define TARGET_TABLE_SIZE 109
+#define NAME_BUFFER_SIZE 40
+#define NOT_FOUND -1
 /*data structures definition part*/
-typedef struct ent {
+
+/* A monitored node of the graph. */
+typedef struct entity {
   char *name;
-  struct rel *rel;
-  struct ent *next;
-} ent;
+  struct relation *relations; /* relation types this entity participates in */
+  struct entity *next;
+} entity;
 
-typedef struct rel_pointer {
-  struct ent *pointed_ent;
-  struct rel_pointer *next;
-} rel_pointer;
+/* A bucket node referencing one entity (an edge endpoint). */
+typedef struct entity_ref {
+  struct entity *entity;
+  struct entity_ref *next;
+} entity_ref;
 
-typedef struct rel {
+/* A relation type as seen from a single entity: the entities it points to
+   (targets) plus how many entities point back to it (incoming_count). */
+typedef struct relation {
   char *name;
-  unsigned int rel_number; /*needed to verify the max*/
-  struct rel *next;
-  struct rel_pointer **hash_table;
-} rel;
+  unsigned int incoming_count; /* number of edges entering this entity */
+  struct relation *next;
+  struct entity_ref **targets; /* hash table of entities this one points to */
+} relation;
 
-typedef struct max_rel {
-  char *rel_name;
-  unsigned int number;
-  unsigned int array_lenght;
-  char **ent_max;
-  struct max_rel *next;
-} max_rel;
+/* Per relation type, the current leaders: the entities tied for the highest
+   incoming_count. */
+typedef struct relation_max {
+  char *name;
+  unsigned int max_count;    /* the highest incoming_count seen */
+  unsigned int leader_count; /* how many entities are tied at max_count */
+  char **leaders;            /* names of the tied entities, sorted */
+  struct relation_max *next;
+} relation_max;
 
 // global variables
-max_rel *max = NULL;
+relation_max *relation_maxes = NULL;
 /*function definition part*/
 
 /*essential functions*/
 
-rel *find_rel(ent *entity, char *rel_name) {
-  rel *buffer = entity->rel;
+relation *find_relation(entity *ent, char *relation_name) {
+  relation *node = ent->relations;
   int comparison = -1;
 
-  while (buffer != NULL &&
-         ((comparison = strcmp(buffer->name, rel_name)) < 0)) {
-    buffer = buffer->next;
+  while (node != NULL &&
+         ((comparison = strcmp(node->name, relation_name)) < 0)) {
+    node = node->next;
   }
 
   if (comparison == 0)
-    return buffer;
+    return node;
 
   return NULL;
-
-  /*while(buffer!=NULL){
-       if(strcmp(buffer->name,rel_name)==0){
-           return buffer;
-       }
-       buffer=buffer->next;
-   }
-   return buffer;*/
 }
 
-ent *find_and_destroy(rel_pointer **hash_entry, char *destination) {
-  rel_pointer *buffer = *(hash_entry);
-  rel_pointer *previous = *(hash_entry);
-  ent *destination_ent;
+entity *remove_entity_ref(entity_ref **bucket, char *target_name) {
+  entity_ref *node = *(bucket);
+  entity_ref *previous = *(bucket);
+  entity *target;
 
-  if (buffer != NULL && strcmp(buffer->pointed_ent->name, destination) == 0) {
-    *hash_entry = buffer->next;
-    destination_ent = buffer->pointed_ent;
-    free(buffer);
-    return destination_ent;
+  if (node != NULL && strcmp(node->entity->name, target_name) == 0) {
+    *bucket = node->next;
+    target = node->entity;
+    free(node);
+    return target;
   }
 
-  while (buffer != NULL && strcmp(buffer->pointed_ent->name, destination) < 0) {
-    previous = buffer;
-    buffer = buffer->next;
+  while (node != NULL && strcmp(node->entity->name, target_name) < 0) {
+    previous = node;
+    node = node->next;
   }
 
-  if (buffer == NULL || strcmp(buffer->pointed_ent->name, destination) > 0)
+  if (node == NULL || strcmp(node->entity->name, target_name) > 0)
     return NULL;
 
-  previous->next = buffer->next;
-  destination_ent = buffer->pointed_ent;
-  free(buffer);
+  previous->next = node->next;
+  target = node->entity;
+  free(node);
 
-  return destination_ent;
+  return target;
 }
 
 /*functions for managing the maxima*/
 
-int binary_search(char **array, char *entity, unsigned int dimension) {
+int binary_search(char **array, char *entity_name, unsigned int length) {
   int start = 0;
-  int end = (int)dimension - 1;
+  int end = (int)length - 1;
   int mid = 0;
   int comparison;
 
   while (start <= end) {
     mid = (start + end) >> 1;
 
-    comparison = strcmp(array[mid], entity);
+    comparison = strcmp(array[mid], entity_name);
 
     if (comparison < 0) {
       start = mid + 1;
@@ -118,117 +117,100 @@ int binary_search(char **array, char *entity, unsigned int dimension) {
       return mid;
   }
 
-  return UNSUCCESSFUL;
+  return NOT_FOUND;
 }
 
-int pop_from_max(max_rel *max_struct, char *entity) {
+int remove_from_max(relation_max *rel_max, char *entity_name) {
 
-  unsigned int limit = max_struct->array_lenght;
+  unsigned int length = rel_max->leader_count;
 
-  char **array = max_struct->ent_max;
+  char **leaders = rel_max->leaders;
 
-  int index = binary_search(array, entity, limit);
+  int index = binary_search(leaders, entity_name, length);
 
-  if (index != UNSUCCESSFUL) {
+  if (index != NOT_FOUND) {
 
-    limit--;
-    max_struct->array_lenght = limit;
+    length--;
+    rel_max->leader_count = length;
 
-    // printf("Removing %s from the maxima, the array length is now %d\n",
-    // entity,limit);
-
-    // printf("The index is %d\n", index);
-
-    for (int i = index; i < (int)limit; i++) {
-      array[i] = array[i + 1];
+    for (int i = index; i < (int)length; i++) {
+      leaders[i] = leaders[i + 1];
     }
 
-    if (max_struct->array_lenght > 0) {
-      max_struct->ent_max = realloc(array, limit * sizeof(char *));
-      // report();
+    if (rel_max->leader_count > 0) {
+      rel_max->leaders = realloc(leaders, length * sizeof(char *));
       return 0;
     } else {
-      free(array);
-      max_struct->ent_max = NULL;
-      max_struct->number = 0;
-      // report();
+      free(leaders);
+      rel_max->leaders = NULL;
+      rel_max->max_count = 0;
       return 1;
     }
   }
 
-  /*entity not present among the maxima: no maximum removed*/
+  /*entity not present among the leaders: no maximum removed*/
   return 0;
 }
 
-max_rel *find_rel_in_max(char *rel_name) {
-  max_rel *buffer = max;
+relation_max *find_relation_max(char *relation_name) {
+  relation_max *node = relation_maxes;
   int comparison = -1;
 
-  while (buffer != NULL &&
-         ((comparison = strcmp(buffer->rel_name, rel_name)) < 0)) {
-    buffer = buffer->next;
+  while (node != NULL &&
+         ((comparison = strcmp(node->name, relation_name)) < 0)) {
+    node = node->next;
   }
 
   if (comparison == 0)
-    return buffer;
+    return node;
 
   return NULL;
-
-  /*while(buffer!=NULL){
-      if(strcmp(buffer->rel_name,rel_name)==0){
-          return buffer;
-      }
-      buffer=buffer->next;
-  }
-  return buffer;*/
 }
 
-max_rel *find_max_rel(char *rel_name) {
-  max_rel *current = max;
-  max_rel *buffer;
+relation_max *find_or_create_relation_max(char *relation_name) {
+  relation_max *node = relation_maxes;
+  relation_max *new_node;
 
-  if ((current == NULL) || (strcmp(current->rel_name, rel_name) > 0)) {
-    current = malloc(sizeof(max_rel));
-    current->rel_name = rel_name;
-    current->number = 0;
-    current->array_lenght = 0;
-    current->ent_max = NULL;
-    current->next = max;
-    max = current;
-    return current;
+  if ((node == NULL) || (strcmp(node->name, relation_name) > 0)) {
+    node = malloc(sizeof(relation_max));
+    node->name = relation_name;
+    node->max_count = 0;
+    node->leader_count = 0;
+    node->leaders = NULL;
+    node->next = relation_maxes;
+    relation_maxes = node;
+    return node;
   } else {
 
-    if (strcmp(current->rel_name, rel_name) == 0) {
-      free(rel_name);
-      return current;
+    if (strcmp(node->name, relation_name) == 0) {
+      free(relation_name);
+      return node;
     }
 
-    while (current->next != NULL &&
-           (strcmp(current->next->rel_name, rel_name) < 0)) {
-      current = current->next;
+    while (node->next != NULL &&
+           (strcmp(node->next->name, relation_name) < 0)) {
+      node = node->next;
     }
 
-    if (current->next != NULL) {
-      if (strcmp(current->next->rel_name, rel_name) == 0) {
-        free(rel_name);
-        return current->next;
+    if (node->next != NULL) {
+      if (strcmp(node->next->name, relation_name) == 0) {
+        free(relation_name);
+        return node->next;
       }
     }
 
-    buffer = malloc(sizeof(max_rel));
-    buffer->rel_name = rel_name;
-    buffer->number = 0;
-    buffer->array_lenght = 0;
-    buffer->ent_max = NULL;
-    buffer->next = current->next;
-    current->next = buffer;
-    return buffer;
+    new_node = malloc(sizeof(relation_max));
+    new_node->name = relation_name;
+    new_node->max_count = 0;
+    new_node->leader_count = 0;
+    new_node->leaders = NULL;
+    new_node->next = node->next;
+    node->next = new_node;
+    return new_node;
   }
 }
 
-int find_spot(char *name, char **array, int start, int end) {
-  // iterative
-
+int find_insertion_index(char *name, char **array, int start, int end) {
   int mid = 0;
   int comparison;
 
@@ -255,71 +237,58 @@ int find_spot(char *name, char **array, int start, int end) {
 
   if (start > end)
     return start;
-
-  // recursive
-
-  /*int mid = (start+end)>>1;
-  int i=strcmp(array[mid],name);
-  if(i<0) return find_spot(name, array, mid+1, end);
-  else if(i>0) return find_spot(name, array, start, mid-1);
-  else return mid;*/
 }
 
-void add_to_max(ent *new_max, max_rel *max_struct) {
+void add_to_max(entity *new_leader, relation_max *rel_max) {
 
-  int index = find_spot(new_max->name, max_struct->ent_max, 0,
-                        (int)max_struct->array_lenght - 1);
+  int index = find_insertion_index(new_leader->name, rel_max->leaders, 0,
+                                   (int)rel_max->leader_count - 1);
 
-  max_struct->array_lenght++;
+  rel_max->leader_count++;
 
-  max_struct->ent_max =
-      realloc(max_struct->ent_max, max_struct->array_lenght * sizeof(char *));
+  rel_max->leaders =
+      realloc(rel_max->leaders, rel_max->leader_count * sizeof(char *));
 
-  char **array = max_struct->ent_max;
+  char **leaders = rel_max->leaders;
 
-  char *buffer1 = new_max->name;
+  char *to_insert = new_leader->name;
 
-  char *buffer2;
+  char *displaced;
 
-  int limit = (int)max_struct->array_lenght;
+  int length = (int)rel_max->leader_count;
 
-  for (; index < limit; index++) {
-    buffer2 = array[index];
-    array[index] = buffer1;
-    buffer1 = buffer2;
+  for (; index < length; index++) {
+    displaced = leaders[index];
+    leaders[index] = to_insert;
+    to_insert = displaced;
   }
-
-  // printf("The array is now %d long\n", max_struct->array_lenght);
-
-  // report();
 }
 
-void found_new_max(ent *new_max, max_rel *max_struct, int new_number) {
-  max_struct->ent_max = realloc(max_struct->ent_max, sizeof(char *));
-  max_struct->ent_max[0] = new_max->name;
-  max_struct->number = new_number;
-  max_struct->array_lenght = 1;
+void set_new_max(entity *new_leader, relation_max *rel_max, int new_count) {
+  rel_max->leaders = realloc(rel_max->leaders, sizeof(char *));
+  rel_max->leaders[0] = new_leader->name;
+  rel_max->max_count = new_count;
+  rel_max->leader_count = 1;
 }
 
-void refresh_max(max_rel *max_struct, ent **hash_table, char *rel_name) {
-  ent *temp = NULL;
+void recompute_max(relation_max *rel_max, entity **entity_table,
+                   char *relation_name) {
+  entity *ent = NULL;
 
-  for (int i = 0; i < MAGIC_NUMBER; i++) {
-    temp = hash_table[i];
-    while (temp != NULL) {
-      rel *rel_temp = find_rel(temp, rel_name);
+  for (int i = 0; i < ENTITY_TABLE_SIZE; i++) {
+    ent = entity_table[i];
+    while (ent != NULL) {
+      relation *rel = find_relation(ent, relation_name);
 
-      if (rel_temp != NULL && rel_temp->rel_number > 0) {
-        if (rel_temp->rel_number == max_struct->number) {
-          // printf("Inserting %s among the maxima\n",temp->name);
-          add_to_max(temp, max_struct);
-        } else if (rel_temp->rel_number > max_struct->number) {
-          // printf("%s is the new maximum\n", temp->name);
-          found_new_max(temp, max_struct, (int)rel_temp->rel_number);
+      if (rel != NULL && rel->incoming_count > 0) {
+        if (rel->incoming_count == rel_max->max_count) {
+          add_to_max(ent, rel_max);
+        } else if (rel->incoming_count > rel_max->max_count) {
+          set_new_max(ent, rel_max, (int)rel->incoming_count);
         }
       }
 
-      temp = temp->next;
+      ent = ent->next;
     }
   }
 }
@@ -327,7 +296,7 @@ void refresh_max(max_rel *max_struct, ent **hash_table, char *rel_name) {
 /*functions dedicated to input*/
 int get_command() {
   char command_line[7];
-  int i = scanf("%s", command_line);
+  int read = scanf("%s", command_line);
 
   if (command_line[0] == 'a') {
     if (command_line[3] == 'e')
@@ -343,18 +312,12 @@ int get_command() {
     return REPORT;
   else
     return END;
-  /* if (strcmp(command_line,"addent")==0) return ADDENT;
-   if (strcmp(command_line,"delent")==0) return DELENT;
-   if (strcmp(command_line,"addrel")==0) return ADDREL;
-   if (strcmp(command_line,"delrel")==0) return DELREL;
-   if (strcmp(command_line,"report")==0) return REPORT;
-   if (strcmp(command_line,"end")==0) return END;
-   */
-  return i;
+
+  return read;
 }
 
-char *get_name() {
-  char buffer[BUFFER_SIZE];
+char *read_name() {
+  char buffer[NAME_BUFFER_SIZE];
   int i = 0;
 
   while ((buffer[i] = (char)getchar()) != '"')
@@ -379,15 +342,9 @@ char *get_name() {
   }
 
   return name;
-
-  // char*name;
-  // name=malloc(BUFFER_SIZE* sizeof(char));
-  // int i=scanf("%ms",&name);
-  // scanf("%s",name);
-  return name;
 }
 
-char *get_name2(char *buffer) {
+char *read_name_into(char *buffer) {
   int i = 0;
 
   while ((buffer[i] = (char)getchar()) != '"')
@@ -410,18 +367,18 @@ char *get_name2(char *buffer) {
 
 unsigned int hash(const char *name) {
   int i = 0;
-  unsigned int hash = 0;
-  unsigned int temp = 0;
+  unsigned int value = 0;
+  unsigned int chunk = 0;
 
   while (name[i] != '\0') {
     for (int j = 0; j < sizeof(int) && name[i] != '\0'; j++) {
-      temp = temp << 8 * sizeof(char);
-      temp = temp | (unsigned int)name[i];
+      chunk = chunk << 8 * sizeof(char);
+      chunk = chunk | (unsigned int)name[i];
       i++;
     }
-    hash = hash + temp;
+    value = value + chunk;
   }
-  return (unsigned int)hash;
+  return (unsigned int)value;
 }
 
 // functions to handle the report
@@ -429,149 +386,144 @@ unsigned int hash(const char *name) {
 /*report*/
 
 int report() {
-  max_rel *temp = max;
+  relation_max *node = relation_maxes;
 
-  char **array;
-  int lol = 0;
+  char **leaders;
+  int active_count = 0;
 
-  while (temp != NULL) {
-    if (temp->number != 0)
-      lol++;
-    temp = temp->next;
+  while (node != NULL) {
+    if (node->max_count != 0)
+      active_count++;
+    node = node->next;
   }
 
-  if (lol == 0) {
+  if (active_count == 0) {
     fputs("none\n", stdout);
     return 0;
   }
 
-  temp = max;
+  node = relation_maxes;
 
-  while (temp != NULL) {
-    unsigned int limit = temp->array_lenght;
-    if (limit != 0) {
-      fputs(temp->rel_name, stdout);
+  while (node != NULL) {
+    unsigned int length = node->leader_count;
+    if (length != 0) {
+      fputs(node->name, stdout);
       fputc(' ', stdout);
-      array = temp->ent_max;
-      for (unsigned int i = 0; i < limit; i++) {
-        fputs(array[i], stdout);
+      leaders = node->leaders;
+      for (unsigned int i = 0; i < length; i++) {
+        fputs(leaders[i], stdout);
         fputc(' ', stdout);
       }
-      /*char number[12];
-      sprintf(number,"%d",temp->number);
-      fputs(number,stdout);*/
-      printf("%d", temp->number);
-      // printf("l'array era lungo %d",limit);
+      printf("%d", node->max_count);
       fputc(';', stdout);
-      lol--;
-      if (lol != 0)
+      active_count--;
+      if (active_count != 0)
         fputc(' ', stdout);
     }
-    temp = temp->next;
+    node = node->next;
   }
   fputc('\n', stdout);
   return 0;
 }
 
 /*addent*/
-void insert_ent(ent **hash_entry, char *ent_name) {
-  ent *current = *hash_entry;
-  ent *buffer;
+void insert_entity(entity **bucket, char *entity_name) {
+  entity *node = *bucket;
+  entity *new_node;
 
-  if ((current == NULL) || (strcmp(current->name, ent_name) > 0)) {
-    current = malloc(sizeof(ent));
-    current->name = ent_name;
-    current->rel = NULL;
-    current->next = *hash_entry;
-    *hash_entry = current;
+  if ((node == NULL) || (strcmp(node->name, entity_name) > 0)) {
+    node = malloc(sizeof(entity));
+    node->name = entity_name;
+    node->relations = NULL;
+    node->next = *bucket;
+    *bucket = node;
     return;
   } else {
 
-    if (strcmp(current->name, ent_name) == 0) {
-      free(ent_name);
+    if (strcmp(node->name, entity_name) == 0) {
+      free(entity_name);
       return;
     }
 
-    while (current->next != NULL &&
-           (strcmp(current->next->name, ent_name) < 0)) {
-      current = current->next;
+    while (node->next != NULL && (strcmp(node->next->name, entity_name) < 0)) {
+      node = node->next;
     }
 
-    if (current->next != NULL) {
-      if (strcmp(current->next->name, ent_name) == 0) {
-        free(ent_name);
+    if (node->next != NULL) {
+      if (strcmp(node->next->name, entity_name) == 0) {
+        free(entity_name);
         return;
       }
     }
 
-    buffer = malloc(sizeof(ent));
-    buffer->name = ent_name;
-    buffer->rel = NULL;
-    buffer->next = current->next;
-    current->next = buffer;
+    new_node = malloc(sizeof(entity));
+    new_node->name = entity_name;
+    new_node->relations = NULL;
+    new_node->next = node->next;
+    node->next = new_node;
     return;
   }
 }
 
-int addent(ent **hash_table) {
+int addent(entity **entity_table) {
   unsigned int index;
-  char *ent_name = get_name();
+  char *entity_name = read_name();
 
-  index = hash(ent_name) % MAGIC_NUMBER;
-  insert_ent(&hash_table[index], ent_name);
+  index = hash(entity_name) % ENTITY_TABLE_SIZE;
+  insert_entity(&entity_table[index], entity_name);
 
   return 0;
 }
 
 /*delent*/
 
-ent *pop_ent(ent **hash_entry, char *ent_name) {
-  ent *buffer = *(hash_entry);
-  ent *previous = *(hash_entry);
+entity *pop_entity(entity **bucket, char *entity_name) {
+  entity *node = *(bucket);
+  entity *previous = *(bucket);
 
-  if (buffer != NULL && strcmp(buffer->name, ent_name) == 0) {
-    *hash_entry = buffer->next;
-    return buffer;
+  if (node != NULL && strcmp(node->name, entity_name) == 0) {
+    *bucket = node->next;
+    return node;
   }
 
-  while (buffer != NULL && strcmp(buffer->name, ent_name) < 0) {
-    previous = buffer;
-    buffer = buffer->next;
+  while (node != NULL && strcmp(node->name, entity_name) < 0) {
+    previous = node;
+    node = node->next;
   }
 
-  if (buffer == NULL || strcmp(buffer->name, ent_name) > 0)
+  if (node == NULL || strcmp(node->name, entity_name) > 0)
     return NULL;
 
-  previous->next = buffer->next;
+  previous->next = node->next;
 
-  return buffer;
+  return node;
 }
 
-rel *pop_first_rel(rel **head) {
-  rel *buffer = *head;
-  *head = buffer->next;
-  return buffer;
+relation *pop_first_relation(relation **head) {
+  relation *first = *head;
+  *head = first->next;
+  return first;
 }
 
-rel_pointer *pop_first_rel_pointer(rel_pointer **head) {
-  rel_pointer *buffer = *head;
-  *head = buffer->next;
-  return buffer;
+entity_ref *pop_first_entity_ref(entity_ref **head) {
+  entity_ref *first = *head;
+  *head = first->next;
+  return first;
 }
 
-void wipe_deleted_ent_from_earth(ent **hash_table, char *ent_name,
-                                 unsigned int index) {
-  ent *current_ent;
+void remove_entity_references(entity **entity_table, char *entity_name,
+                              unsigned int index) {
+  entity *current_ent;
 
-  for (int i = 0; i < MAGIC_NUMBER; i++) {
-    current_ent = hash_table[i];
+  for (int i = 0; i < ENTITY_TABLE_SIZE; i++) {
+    current_ent = entity_table[i];
 
     while (current_ent != NULL) {
-      rel *current_rel = current_ent->rel;
+      relation *current_rel = current_ent->relations;
 
       while (current_rel != NULL) {
-        if (current_rel->hash_table != NULL)
-          find_and_destroy(&(current_rel->hash_table[index]), ent_name);
+        if (current_rel->targets != NULL)
+          remove_entity_ref(&(current_rel->targets[index]), entity_name);
 
         current_rel = current_rel->next;
       }
@@ -581,76 +533,76 @@ void wipe_deleted_ent_from_earth(ent **hash_table, char *ent_name,
   }
 }
 
-int delent(ent **hash_table) {
-  char ent_name[BUFFER_SIZE];
+int delent(entity **entity_table) {
+  char entity_name[NAME_BUFFER_SIZE];
 
-  get_name2(ent_name);
+  read_name_into(entity_name);
 
-  // char*ent_name=get_name()
-
-  unsigned int ent_index = hash(ent_name) % MAGIC_NUMBER;
+  unsigned int entity_index = hash(entity_name) % ENTITY_TABLE_SIZE;
 
   // removed the entity from the hash table
-  ent *deleted_ent = pop_ent(&hash_table[ent_index], ent_name);
+  entity *deleted_ent = pop_entity(&entity_table[entity_index], entity_name);
   // if the entity was present
 
   if (deleted_ent != NULL) {
 
-    rel *head = deleted_ent->rel;
+    relation *relation_list = deleted_ent->relations;
 
-    while (head != NULL) {
+    while (relation_list != NULL) {
 
-      rel *popped_rel = pop_first_rel(&head);
+      relation *popped_rel = pop_first_relation(&relation_list);
 
       if (popped_rel != NULL) {
-        char *rel_name = popped_rel->name;
-        max_rel *max_struct = find_rel_in_max(rel_name);
+        char *relation_name = popped_rel->name;
+        relation_max *rel_max = find_relation_max(relation_name);
 
-        if (max_struct != NULL) {
+        if (rel_max != NULL) {
 
-          // remove my entity from every record if needed
-          if (popped_rel->rel_number == max_struct->number) {
-            int flag = pop_from_max(max_struct, deleted_ent->name);
+          // remove my entity from the leaders if needed
+          if (popped_rel->incoming_count == rel_max->max_count) {
+            int became_empty = remove_from_max(rel_max, deleted_ent->name);
 
-            popped_rel->rel_number = 0;
+            popped_rel->incoming_count = 0;
 
-            if (flag == 1) {
-              refresh_max(max_struct, hash_table, rel_name);
+            if (became_empty == 1) {
+              recompute_max(rel_max, entity_table, relation_name);
             }
           }
 
-          // now empty the hash table instead
-          if (popped_rel->hash_table != NULL) {
-            rel_pointer **rel_hash_table = popped_rel->hash_table;
-            for (int i = 0; i < MAGIC_NUMBER_2; i++) {
+          // now empty the targets table instead
+          if (popped_rel->targets != NULL) {
+            entity_ref **targets = popped_rel->targets;
+            for (int i = 0; i < TARGET_TABLE_SIZE; i++) {
 
-              while (rel_hash_table[i] != NULL) {
+              while (targets[i] != NULL) {
 
-                rel_pointer *popped_rel_pointer =
-                    pop_first_rel_pointer(&rel_hash_table[i]);
-                ent *popped_ent = popped_rel_pointer->pointed_ent;
+                entity_ref *popped_ref = pop_first_entity_ref(&targets[i]);
+                entity *popped_ent = popped_ref->entity;
 
-                free(popped_rel_pointer);
+                free(popped_ref);
 
                 if (popped_ent != NULL) {
-                  rel *rel_pointer = find_rel(popped_ent, rel_name);
+                  relation *target_rel =
+                      find_relation(popped_ent, relation_name);
 
-                  if (rel_pointer != NULL) {
-                    rel_pointer->rel_number--;
+                  if (target_rel != NULL) {
+                    target_rel->incoming_count--;
 
-                    if ((rel_pointer->rel_number + 1) == max_struct->number) {
-                      int flag = pop_from_max(max_struct, popped_ent->name);
+                    if ((target_rel->incoming_count + 1) ==
+                        rel_max->max_count) {
+                      int became_empty =
+                          remove_from_max(rel_max, popped_ent->name);
 
-                      if (flag == 1) {
-                        refresh_max(max_struct, hash_table, rel_name);
+                      if (became_empty == 1) {
+                        recompute_max(rel_max, entity_table, relation_name);
                       }
                     }
                   }
                 }
               }
             }
-            free(rel_hash_table);
-            popped_rel->hash_table = NULL;
+            free(targets);
+            popped_rel->targets = NULL;
           }
         }
       }
@@ -658,171 +610,159 @@ int delent(ent **hash_table) {
       free(popped_rel);
     }
 
-    // now delete the traces of ent
-    unsigned int index = hash(deleted_ent->name) % MAGIC_NUMBER_2;
+    // now delete the traces of the entity
+    unsigned int index = hash(deleted_ent->name) % TARGET_TABLE_SIZE;
 
-    wipe_deleted_ent_from_earth(hash_table, deleted_ent->name, index);
+    remove_entity_references(entity_table, deleted_ent->name, index);
 
     free(deleted_ent->name);
     free(deleted_ent);
   }
 
-  // free(ent_name);
   return 0;
 }
 
 /*addrel*/
 
-rel *insert_rel(rel **head, char *rel_name) {
-  rel *current = *head;
-  rel *buffer;
+relation *insert_relation(relation **head, char *relation_name) {
+  relation *node = *head;
+  relation *new_node;
 
-  if ((current == NULL) || (strcmp(current->name, rel_name) > 0)) {
-    current = malloc(sizeof(rel));
-    current->name = rel_name;
-    current->rel_number = 0;
-    current->hash_table = NULL;
-    current->next = *head;
-    *head = current;
-    return current;
+  if ((node == NULL) || (strcmp(node->name, relation_name) > 0)) {
+    node = malloc(sizeof(relation));
+    node->name = relation_name;
+    node->incoming_count = 0;
+    node->targets = NULL;
+    node->next = *head;
+    *head = node;
+    return node;
   } else {
 
-    if (strcmp(current->name, rel_name) == 0) {
-      return current;
+    if (strcmp(node->name, relation_name) == 0) {
+      return node;
     }
 
-    while (current->next != NULL &&
-           (strcmp(current->next->name, rel_name) < 0)) {
-      current = current->next;
+    while (node->next != NULL &&
+           (strcmp(node->next->name, relation_name) < 0)) {
+      node = node->next;
     }
 
-    if (current->next != NULL) {
-      if (strcmp(current->next->name, rel_name) == 0) {
-        return current->next;
+    if (node->next != NULL) {
+      if (strcmp(node->next->name, relation_name) == 0) {
+        return node->next;
       }
     }
 
-    buffer = malloc(sizeof(rel));
-    buffer->name = rel_name;
-    buffer->rel_number = 0;
-    buffer->hash_table = NULL;
-    buffer->next = current->next;
-    current->next = buffer;
-    return buffer;
+    new_node = malloc(sizeof(relation));
+    new_node->name = relation_name;
+    new_node->incoming_count = 0;
+    new_node->targets = NULL;
+    new_node->next = node->next;
+    node->next = new_node;
+    return new_node;
   }
 }
 
-void increase_counter(ent *destination, char *rel_name, max_rel *max_struct) {
-  rel *my_rel;
+void increment_incoming(entity *target, char *relation_name,
+                        relation_max *rel_max) {
+  relation *target_rel;
 
-  my_rel = insert_rel(&destination->rel, rel_name);
-  my_rel->rel_number++;
+  target_rel = insert_relation(&target->relations, relation_name);
+  target_rel->incoming_count++;
 
-  if (my_rel->rel_number > max_struct->number)
-    found_new_max(destination, max_struct, (int)my_rel->rel_number);
-  else if (my_rel->rel_number == max_struct->number)
-    add_to_max(destination, max_struct);
+  if (target_rel->incoming_count > rel_max->max_count)
+    set_new_max(target, rel_max, (int)target_rel->incoming_count);
+  else if (target_rel->incoming_count == rel_max->max_count)
+    add_to_max(target, rel_max);
   else
     return;
 }
 
-ent *find(ent *hash_entry, char *destination) {
-  // extract it, must be done first
-
+entity *find_entity(entity *node, char *entity_name) {
   int comparison = -1;
 
-  while (hash_entry != NULL &&
-         (comparison = strcmp(hash_entry->name, destination)) < 0) {
-    hash_entry = hash_entry->next;
+  while (node != NULL && (comparison = strcmp(node->name, entity_name)) < 0) {
+    node = node->next;
   }
 
   if (comparison == 0)
-    return hash_entry;
+    return node;
 
   return NULL;
-
-  /*while(hash_entry!=NULL){
-      if(strcmp(hash_entry->name,destination)==0){
-          return hash_entry;
-      }
-      hash_entry=hash_entry->next;
-  }
-  return hash_entry;*/
 }
 
-int add(ent *destination, rel_pointer **head) {
-  rel_pointer *current = *head;
-  rel_pointer *buffer;
+int add_entity_ref(entity *target, entity_ref **head) {
+  entity_ref *node = *head;
+  entity_ref *new_ref;
 
-  if ((current == NULL) ||
-      (strcmp(current->pointed_ent->name, destination->name) > 0)) {
-    current = malloc(sizeof(rel_pointer));
-    current->pointed_ent = destination;
-    current->next = *head;
-    *head = current;
+  if ((node == NULL) || (strcmp(node->entity->name, target->name) > 0)) {
+    node = malloc(sizeof(entity_ref));
+    node->entity = target;
+    node->next = *head;
+    *head = node;
     return 1;
   } else {
 
-    if (strcmp(current->pointed_ent->name, destination->name) == 0) {
+    if (strcmp(node->entity->name, target->name) == 0) {
       return 0;
     }
 
-    while (current->next != NULL &&
-           (strcmp(current->next->pointed_ent->name, destination->name) < 0)) {
-      current = current->next;
+    while (node->next != NULL &&
+           (strcmp(node->next->entity->name, target->name) < 0)) {
+      node = node->next;
     }
 
-    if (current->next != NULL) {
-      if (strcmp(current->next->pointed_ent->name, destination->name) == 0) {
+    if (node->next != NULL) {
+      if (strcmp(node->next->entity->name, target->name) == 0) {
         return 0;
       }
     }
 
-    buffer = malloc(sizeof(rel_pointer));
-    buffer->pointed_ent = destination;
-    buffer->next = current->next;
-    current->next = buffer;
+    new_ref = malloc(sizeof(entity_ref));
+    new_ref->entity = target;
+    new_ref->next = node->next;
+    node->next = new_ref;
     return 1;
   }
 }
 
-void find_and_add(
-    ent *origin_ent, ent *destination_ent, char *rel_name,
-    max_rel *max_struct) { // I need to make it point to the same string
+void add_relation_edge(entity *origin_ent, entity *destination_ent,
+                       char *relation_name, relation_max *rel_max) {
 
-  rel *my_rel = insert_rel(&origin_ent->rel, rel_name);
+  relation *origin_rel = insert_relation(&origin_ent->relations, relation_name);
 
-  if (my_rel->hash_table == NULL) {
-    my_rel->hash_table = calloc(MAGIC_NUMBER_2, sizeof(rel_pointer *));
+  if (origin_rel->targets == NULL) {
+    origin_rel->targets = calloc(TARGET_TABLE_SIZE, sizeof(entity_ref *));
   }
 
-  unsigned int d_index = hash(destination_ent->name) % MAGIC_NUMBER_2;
+  unsigned int target_index = hash(destination_ent->name) % TARGET_TABLE_SIZE;
 
-  int flag = add(destination_ent, &my_rel->hash_table[d_index]);
+  int added =
+      add_entity_ref(destination_ent, &origin_rel->targets[target_index]);
 
-  if (flag == 1)
-    increase_counter(destination_ent, rel_name, max_struct);
+  if (added == 1)
+    increment_incoming(destination_ent, relation_name, rel_max);
 }
 
-int addrel(ent **hash_table) {
-  char *origin = get_name();
-  char *destination = get_name();
-  char *rel_name = get_name();
+int addrel(entity **entity_table) {
+  char *origin = read_name();
+  char *destination = read_name();
+  char *relation_name = read_name();
 
-  max_rel *max_struct = find_max_rel(rel_name);
+  relation_max *rel_max = find_or_create_relation_max(relation_name);
 
-  rel_name = max_struct->rel_name;
+  relation_name = rel_max->name;
 
-  unsigned int index = hash(origin) % MAGIC_NUMBER; // index of the destination
+  unsigned int index = hash(origin) % ENTITY_TABLE_SIZE;
 
-  ent *origin_ent = find(hash_table[index], origin);
+  entity *origin_ent = find_entity(entity_table[index], origin);
 
   if (origin_ent != NULL) {
-    index = hash(destination) % MAGIC_NUMBER;
-    ent *destination_ent = find(hash_table[index], destination);
+    index = hash(destination) % ENTITY_TABLE_SIZE;
+    entity *destination_ent = find_entity(entity_table[index], destination);
 
     if (destination_ent != NULL) {
-      find_and_add(origin_ent, destination_ent, rel_name, max_struct);
+      add_relation_edge(origin_ent, destination_ent, relation_name, rel_max);
     }
   }
 
@@ -833,45 +773,42 @@ int addrel(ent **hash_table) {
 
 /*delrel*/
 
-int delrel(ent **hash_table) {
-  // char *origin = get_name();
-  // char *destination = get_name();
-  // char *rel_name = get_name();
+int delrel(entity **entity_table) {
+  char origin[NAME_BUFFER_SIZE];
+  char destination[NAME_BUFFER_SIZE];
+  char relation_name[NAME_BUFFER_SIZE];
 
-  char origin[BUFFER_SIZE];
-  char destination[BUFFER_SIZE];
-  char rel_name[BUFFER_SIZE];
+  read_name_into(origin);
+  read_name_into(destination);
+  read_name_into(relation_name);
 
-  get_name2(origin);
-  get_name2(destination);
-  get_name2(rel_name);
+  unsigned int index = hash(origin) % ENTITY_TABLE_SIZE;
 
-  unsigned int index = hash(origin) % MAGIC_NUMBER;
-
-  ent *origin_ent = find(hash_table[index], origin);
+  entity *origin_ent = find_entity(entity_table[index], origin);
 
   if (origin_ent != NULL) {
-    rel *rel_pointer = find_rel(origin_ent, rel_name);
+    relation *origin_rel = find_relation(origin_ent, relation_name);
 
-    if (rel_pointer != NULL && rel_pointer->hash_table != NULL) {
-      index = hash(destination) % MAGIC_NUMBER_2;
-      ent *destination_ent =
-          find_and_destroy(&(rel_pointer->hash_table[index]), destination);
+    if (origin_rel != NULL && origin_rel->targets != NULL) {
+      index = hash(destination) % TARGET_TABLE_SIZE;
+      entity *destination_ent =
+          remove_entity_ref(&(origin_rel->targets[index]), destination);
 
       if (destination_ent != NULL) {
-        rel_pointer = find_rel(destination_ent, rel_name);
+        relation *destination_rel =
+            find_relation(destination_ent, relation_name);
 
-        rel_pointer->rel_number--;
+        destination_rel->incoming_count--;
 
-        max_rel *max_struct = find_rel_in_max(rel_name);
+        relation_max *rel_max = find_relation_max(relation_name);
 
-        if (max_struct != NULL) {
+        if (rel_max != NULL) {
 
-          if ((rel_pointer->rel_number + 1) == max_struct->number) {
-            int flag = pop_from_max(max_struct, destination_ent->name);
+          if ((destination_rel->incoming_count + 1) == rel_max->max_count) {
+            int became_empty = remove_from_max(rel_max, destination_ent->name);
 
-            if (flag == 1) {
-              refresh_max(max_struct, hash_table, rel_name);
+            if (became_empty == 1) {
+              recompute_max(rel_max, entity_table, relation_name);
             }
           }
         }
@@ -879,93 +816,88 @@ int delrel(ent **hash_table) {
     }
   }
 
-  // free(origin);
-  // free(destination);
-  // free(rel_name);
   return 0;
 }
 
-/*test*/
-void rel_print_aux(rel_pointer *rel_ent) {
-  while (rel_ent != NULL) {
-    printf("%s\n", rel_ent->pointed_ent->name);
-    rel_ent = rel_ent->next;
+/*debug printing helpers*/
+void print_entity_refs(entity_ref *ref) {
+  while (ref != NULL) {
+    printf("%s\n", ref->entity->name);
+    ref = ref->next;
   }
 }
 
-void rel_print(ent *hash_entry) {
-  rel *buffer = hash_entry->rel;
-  rel_pointer **buffer2;
+void print_relations(entity *ent) {
+  relation *node = ent->relations;
+  entity_ref **targets;
 
-  if (buffer == NULL) {
+  if (node == NULL) {
     printf("\nnone\n");
     return;
   }
-  while (buffer != NULL) {
-    buffer2 = buffer->hash_table;
-    if (buffer2 != NULL) {
-      printf("\n-relation \"%s\" with %d incoming with\n", buffer->name,
-             buffer->rel_number);
-      for (int i = 0; i < MAGIC_NUMBER_2; i++) {
-        rel_print_aux(buffer2[i]);
+  while (node != NULL) {
+    targets = node->targets;
+    if (targets != NULL) {
+      printf("\n-relation \"%s\" with %d incoming with\n", node->name,
+             node->incoming_count);
+      for (int i = 0; i < TARGET_TABLE_SIZE; i++) {
+        print_entity_refs(targets[i]);
       }
     } else {
-      printf("\n-relation %s with %d incoming and none\n", buffer->name,
-             buffer->rel_number);
+      printf("\n-relation %s with %d incoming and none\n", node->name,
+             node->incoming_count);
     }
-    buffer = buffer->next;
+    node = node->next;
   }
 }
 
-void entry_print(ent *hash_entry) {
-  if (hash_entry == NULL)
+void print_entity(entity *ent) {
+  if (ent == NULL)
     return;
-  printf("Entity %s has the following relations:", hash_entry->name);
-  rel_print(hash_entry);
-  entry_print(hash_entry->next);
+  printf("Entity %s has the following relations:", ent->name);
+  print_relations(ent);
+  print_entity(ent->next);
 }
-void hash_print(ent **hash_table) {
-  for (int i = 0; i < MAGIC_NUMBER; i++) {
-    entry_print(hash_table[i]);
+void print_entity_table(entity **entity_table) {
+  for (int i = 0; i < ENTITY_TABLE_SIZE; i++) {
+    print_entity(entity_table[i]);
   }
 }
-void max_print() {
+void print_maxes() {
   printf("In summary, the relations are:\n");
 
-  max_rel *buffer = max;
+  relation_max *node = relation_maxes;
 
-  while (buffer != NULL) {
-    printf("-%s\n", buffer->rel_name);
-    printf("with maxima:\n");
-    for (int i = 0; i < (int)buffer->array_lenght; i++) {
-      printf("%s\n", buffer->ent_max[i]);
+  while (node != NULL) {
+    printf("-%s\n", node->name);
+    printf("with leaders:\n");
+    for (int i = 0; i < (int)node->leader_count; i++) {
+      printf("%s\n", node->leaders[i]);
     }
-    buffer = buffer->next;
+    node = node->next;
   }
 }
 
 int main() {
 
-  // freopen("input1.txt","r",stdin);
-
   int command = BEGIN;
-  ent *hash_table[MAGIC_NUMBER] = {NULL};
+  entity *entity_table[ENTITY_TABLE_SIZE] = {NULL};
 
   while (command != END) {
     command = get_command();
 
     switch (command) {
     case ADDENT:
-      addent(hash_table);
+      addent(entity_table);
       break;
     case DELENT:
-      delent(hash_table);
+      delent(entity_table);
       break;
     case ADDREL:
-      addrel(hash_table);
+      addrel(entity_table);
       break;
     case DELREL:
-      delrel(hash_table);
+      delrel(entity_table);
       break;
     case REPORT:
       report();
@@ -973,13 +905,7 @@ int main() {
     default:
       break;
     }
-
-    // hash_print(hash_table);
   }
 
-  // hash_print(hash_table);
-  // max_print();
-
   exit(0);
-  // return END;
 }
