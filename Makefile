@@ -19,10 +19,24 @@ format:
 format-check:
 	clang-format --dry-run --Werror $(SRC)
 
-# Golden-snapshot test: the example input must reproduce the committed output.
+# Golden-snapshot tests: every <name>.txt must reproduce its committed
+# <name>.expected.txt. Covers the big examples/ scenario plus the focused
+# basic-case suite in tests/.
+TEST_INPUTS := $(filter-out %.expected.txt,$(wildcard examples/*.txt tests/*.txt))
+
 test: $(BIN)
-	./$(BIN) < examples/doctor_who.txt | diff -u examples/doctor_who.expected.txt -
-	@echo "OK: output matches examples/doctor_who.expected.txt"
+	@fail=0; \
+	for in in $(TEST_INPUTS); do \
+	  exp="$${in%.txt}.expected.txt"; \
+	  [ -f "$$exp" ] || continue; \
+	  if ./$(BIN) < "$$in" | diff -u "$$exp" - >/dev/null; then \
+	    echo "PASS: $$in"; \
+	  else \
+	    echo "FAIL: $$in"; ./$(BIN) < "$$in" | diff -u "$$exp" - || true; fail=1; \
+	  fi; \
+	done; \
+	if [ $$fail -eq 0 ]; then echo "OK: all snapshots match"; fi; \
+	exit $$fail
 
 clean:
 	rm -rf bin

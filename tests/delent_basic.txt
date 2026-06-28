@@ -1,0 +1,9 @@
+addent "A"
+addent "B"
+addent "Target"
+addrel "A" "Target" "r"
+addrel "B" "Target" "r"
+report
+delent "Target"
+report
+end

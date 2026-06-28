@@ -1,0 +1,4 @@
+addent "A"
+addrel "A" "A" "r"
+report
+end

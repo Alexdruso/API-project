@@ -1,0 +1,6 @@
+addent "A"
+addent "A"
+addent "B"
+addrel "A" "B" "knows"
+report
+end
