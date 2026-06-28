@@ -546,11 +546,12 @@ int delent(entity **entity_table) {
 
   if (deleted_ent != NULL) {
 
-    relation *relation_list = deleted_ent->relations;
+    // Pop directly off deleted_ent->relations so the head stays valid: a
+    // self-relation makes the cleanup below call find_relation(deleted_ent,
+    // ...), which must not walk a list node we have already freed.
+    while (deleted_ent->relations != NULL) {
 
-    while (relation_list != NULL) {
-
-      relation *popped_rel = pop_first_relation(&relation_list);
+      relation *popped_rel = pop_first_relation(&deleted_ent->relations);
 
       if (popped_rel != NULL) {
         char *relation_name = popped_rel->name;

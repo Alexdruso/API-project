@@ -1,0 +1,9 @@
+addent "X"
+addent "Y"
+addrel "X" "X" "a"
+addrel "Y" "X" "a"
+addrel "X" "X" "b"
+report
+delent "X"
+report
+end
