@@ -1,0 +1,8 @@
+addent "A"
+addent "B"
+addent "C"
+addrel "A" "B" "likes"
+addrel "A" "C" "knows"
+addrel "A" "B" "knows"
+report
+end

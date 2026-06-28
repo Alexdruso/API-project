@@ -1,0 +1,9 @@
+addent "Charlie"
+addent "Alice"
+addent "Bob"
+addent "Source"
+addrel "Source" "Charlie" "likes"
+addrel "Source" "Alice" "likes"
+addrel "Source" "Bob" "likes"
+report
+end

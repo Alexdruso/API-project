@@ -1,0 +1,13 @@
+addent "A"
+addent "B"
+addent "C"
+report
+addrel "A" "B" "r"
+report
+addrel "C" "B" "r"
+report
+addrel "A" "C" "r"
+report
+delrel "A" "B" "r"
+report
+end

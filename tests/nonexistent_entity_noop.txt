@@ -1,0 +1,6 @@
+addent "A"
+addrel "A" "Ghost" "r"
+addrel "Ghost" "A" "r"
+delrel "A" "Ghost" "r"
+report
+end
