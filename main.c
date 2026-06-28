@@ -28,7 +28,7 @@ typedef struct rel_pointer{
 
 typedef struct rel{
     char*name;
-    unsigned int rel_number; /*necessario a verificare il max*/
+    unsigned int rel_number; /*needed to verify the max*/
     struct rel*next;
     struct rel_pointer**hash_table;
 }rel;
@@ -41,14 +41,14 @@ typedef struct max_rel{
     struct max_rel* next;
 }max_rel;
 
-//variabili globali
+//global variables
 max_rel* max=NULL;
 /*function definition part*/
 
 
 
 
-/*funzioni essenziali*/
+/*essential functions*/
 
 rel*find_rel(ent*entity, char*rel_name){
     rel*buffer=entity->rel;
@@ -97,7 +97,7 @@ ent* find_and_destroy(rel_pointer**hash_entry, char* destination){
     return destination_ent;
 }
 
-/*funzioni per la gestione dei massimi*/
+/*functions for managing the maxima*/
 
 int binary_search(char**array,char*entity, unsigned int dimension){
     int start=0;
@@ -135,9 +135,9 @@ int pop_from_max(max_rel* max_struct,char*entity){
         limit--;
         max_struct->array_lenght=limit;
 
-        //printf("Elimino %s dai massimi, la lunghezza dell'array è ora %d\n", entity,limit);
+        //printf("Removing %s from the maxima, the array length is now %d\n", entity,limit);
 
-        //printf("L'indice è %d\n", index);
+        //printf("The index is %d\n", index);
 
         for(int i=index;i<(int)limit;i++){
             array[i]=array[i+1];
@@ -159,7 +159,7 @@ int pop_from_max(max_rel* max_struct,char*entity){
 
     }
 
-    /*entity non presente tra i massimi: nessun massimo rimosso*/
+    /*entity not present among the maxima: no maximum removed*/
     return 0;
 }
 
@@ -228,7 +228,7 @@ max_rel* find_max_rel(char*rel_name){
 }
 
 int find_spot(char*name, char**array, int start, int end){
-    //linearizzata
+    //iterative
 
     int mid=0;
     int comparison;
@@ -258,7 +258,7 @@ int find_spot(char*name, char**array, int start, int end){
 
     if(start>end) return start;
 
-    //ricorsiva
+    //recursive
 
     /*int mid = (start+end)>>1;
     int i=strcmp(array[mid],name);
@@ -289,7 +289,7 @@ void add_to_max(ent*new_max, max_rel* max_struct){
             buffer1 = buffer2;
         }
 
-        //printf("L'array ora è lungo %d\n", max_struct->array_lenght);
+        //printf("The array is now %d long\n", max_struct->array_lenght);
 
         //report();
 }
@@ -311,11 +311,11 @@ void refresh_max(max_rel*max_struct,ent**hash_table,char*rel_name){
 
             if(rel_temp!=NULL&&rel_temp->rel_number>0){
                 if(rel_temp->rel_number==max_struct->number){
-                    //printf("Inserisco %s tra i massimi\n",temp->name);
+                    //printf("Inserting %s among the maxima\n",temp->name);
                     add_to_max(temp,max_struct);
                 }
                 else if(rel_temp->rel_number>max_struct->number) {
-                    //printf("%s è il nuovo massimo\n", temp->name);
+                    //printf("%s is the new maximum\n", temp->name);
                     found_new_max(temp,max_struct,(int)rel_temp->rel_number);
                 }
             }
@@ -326,7 +326,7 @@ void refresh_max(max_rel*max_struct,ent**hash_table,char*rel_name){
 
 }
 
-/*funzioni dedicate all'input*/
+/*functions dedicated to input*/
 int get_command(){
     char command_line[7];
     int i=scanf("%s", command_line);
@@ -402,7 +402,7 @@ char* get_name2(char*buffer){
     return buffer;
 }
 
-/*funzione di hash*/
+/*hash function*/
 
 unsigned int hash(const char* name){
     int i=0;
@@ -420,7 +420,7 @@ unsigned int hash(const char* name){
     return (unsigned int)hash;
 }
 
-//funzioni per gestire la report
+//functions to handle the report
 
 /*report*/
 
@@ -582,9 +582,9 @@ int delent(ent**hash_table){
 
     unsigned int ent_index=hash(ent_name)%MAGIC_NUMBER;
 
-    //ho tolto l'entità dalla hash table
+    //removed the entity from the hash table
     ent*deleted_ent=pop_ent(&hash_table[ent_index],ent_name);
-    //se l'entità era presente
+    //if the entity was present
 
     if(deleted_ent!=NULL){
 
@@ -600,7 +600,7 @@ int delent(ent**hash_table){
 
                 if(max_struct!=NULL){
 
-                    //tolgo eventualmente la mia entità da ogni record
+                    //remove my entity from every record if needed
                     if(popped_rel->rel_number==max_struct->number){
                         int flag=pop_from_max(max_struct,deleted_ent->name);
 
@@ -611,7 +611,7 @@ int delent(ent**hash_table){
                         }
                     }
 
-                    //ora invece svuoto la hash table
+                    //now empty the hash table instead
                     if(popped_rel->hash_table!=NULL){
                         rel_pointer**rel_hash_table=popped_rel->hash_table;
                         for (int i=0;i<MAGIC_NUMBER_2;i++) {
@@ -649,7 +649,7 @@ int delent(ent**hash_table){
             free(popped_rel);
         }
 
-        //ora elimino le tracce di ent
+        //now delete the traces of ent
         unsigned int index=hash(deleted_ent->name)%MAGIC_NUMBER_2;
 
         wipe_deleted_ent_from_earth(hash_table, deleted_ent->name, index);
@@ -715,7 +715,7 @@ void increase_counter(ent*destination,char*rel_name, max_rel*max_struct){
 }
 
 ent*find(ent*hash_entry,char*destination){
-//estrailo, va fatto prima
+//extract it, must be done first
 
 
     int comparison=-1;
@@ -774,7 +774,7 @@ int add(ent*destination,rel_pointer**head) {
 }
 
 
-void find_and_add(ent*origin_ent,ent*destination_ent,char*rel_name, max_rel*max_struct){ //devo cercare di far puntare alla stessa stringa
+void find_and_add(ent*origin_ent,ent*destination_ent,char*rel_name, max_rel*max_struct){ //I need to make it point to the same string
 
     rel*my_rel=insert_rel(&origin_ent->rel,rel_name);
 
@@ -799,7 +799,7 @@ int addrel(ent**hash_table){
 
     rel_name=max_struct->rel_name;
 
-    unsigned int index=hash(origin)%MAGIC_NUMBER; //indice della destinazione
+    unsigned int index=hash(origin)%MAGIC_NUMBER; //index of the destination
 
     ent*origin_ent=find(hash_table[index],origin);
 
@@ -875,7 +875,7 @@ int delrel(ent**hash_table) {
 
 
 
-/*prova*/
+/*test*/
 void rel_print_aux(rel_pointer* rel_ent){
     while(rel_ent!=NULL){
         printf("%s\n",rel_ent->pointed_ent->name);
@@ -894,13 +894,13 @@ void rel_print(ent*hash_entry){
     while(buffer!=NULL){
         buffer2=buffer->hash_table;
         if(buffer2!=NULL) {
-            printf("\n-relazione \"%s\" con %d entranti con\n",buffer->name, buffer->rel_number);
+            printf("\n-relation \"%s\" with %d incoming with\n",buffer->name, buffer->rel_number);
             for (int i = 0; i < MAGIC_NUMBER_2; i++) {
                 rel_print_aux(buffer2[i]);
             }
         }
         else{
-            printf("\n-relazione %s con %d entranti e none\n", buffer->name, buffer->rel_number);
+            printf("\n-relation %s with %d incoming and none\n", buffer->name, buffer->rel_number);
         }
         buffer=buffer->next;
     }
@@ -908,7 +908,7 @@ void rel_print(ent*hash_entry){
 
 void entry_print(ent*hash_entry){
     if(hash_entry==NULL) return;
-    printf("L'entità %s ha le seguenti relazioni:",hash_entry->name);
+    printf("Entity %s has the following relations:",hash_entry->name);
     rel_print(hash_entry);
     entry_print(hash_entry->next);
 }
@@ -918,13 +918,13 @@ void hash_print(ent**hash_table){
     }
 }
 void max_print(){
-    printf("Riassumento le relazioni sono:\n");
+    printf("In summary, the relations are:\n");
 
     max_rel* buffer=max;
 
     while(buffer!=NULL){
         printf("-%s\n", buffer->rel_name);
-        printf("con massimi:\n");
+        printf("with maxima:\n");
         for(int i=0;i<(int)buffer->array_lenght;i++){
             printf("%s\n", buffer->ent_max[i]);
         }
