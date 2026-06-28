@@ -10,7 +10,7 @@
 #define DELREL 4
 #define REPORT 5
 #define END 0
-#define ENTITY_TABLE_SIZE 1009
+#define ENTITY_TABLE_SIZE 3001
 #define TARGET_TABLE_SIZE 109
 #define NAME_BUFFER_SIZE 40
 #define NOT_FOUND -1
@@ -294,9 +294,45 @@ void recompute_max(relation_max *rel_max, entity **entity_table,
 }
 
 /*functions dedicated to input*/
+
+/* Block-buffered, unlocked stdin reader. Reading one character at a time with
+   getchar()/scanf() spends most of its time in libc stream locking; pulling
+   input in 64 KiB blocks and handing out bytes ourselves removes that overhead
+   while keeping memory flat (a single fixed buffer, not the whole input). */
+#define INPUT_BUFFER_SIZE 65536
+static unsigned char input_buffer[INPUT_BUFFER_SIZE];
+static int input_len = 0;
+static int input_pos = 0;
+
+static inline int next_char(void) {
+  if (input_pos >= input_len) {
+    input_len = (int)fread(input_buffer, 1, INPUT_BUFFER_SIZE, stdin);
+    input_pos = 0;
+    if (input_len <= 0)
+      return -1;
+  }
+  return input_buffer[input_pos++];
+}
+
 int get_command() {
+  int c;
+  do {
+    c = next_char();
+  } while (c == ' ' || c == '\n' || c == '\t' || c == '\r');
+
+  if (c == -1)
+    return END;
+
+  /* Only the 1st and 4th characters are needed to disambiguate the commands. */
   char command_line[7];
-  int read = scanf("%s", command_line);
+  int i = 0;
+  command_line[i++] = (char)c;
+  while ((c = next_char()) != -1 && c != ' ' && c != '\n' && c != '\t' &&
+         c != '\r') {
+    if (i < 6)
+      command_line[i++] = (char)c;
+  }
+  command_line[i] = '\0';
 
   if (command_line[0] == 'a') {
     if (command_line[3] == 'e')
@@ -312,20 +348,18 @@ int get_command() {
     return REPORT;
   else
     return END;
-
-  return read;
 }
 
 char *read_name() {
   char buffer[NAME_BUFFER_SIZE];
   int i = 0;
 
-  while ((buffer[i] = (char)getchar()) != '"')
+  while ((buffer[i] = (char)next_char()) != '"')
     ;
 
   i++;
 
-  while ((buffer[i] = (char)getchar()) != '"') {
+  while ((buffer[i] = (char)next_char()) != '"') {
     i++;
   }
 
@@ -347,12 +381,12 @@ char *read_name() {
 char *read_name_into(char *buffer) {
   int i = 0;
 
-  while ((buffer[i] = (char)getchar()) != '"')
+  while ((buffer[i] = (char)next_char()) != '"')
     ;
 
   i++;
 
-  while ((buffer[i] = (char)getchar()) != '"') {
+  while ((buffer[i] = (char)next_char()) != '"') {
     i++;
   }
 
