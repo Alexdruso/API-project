@@ -28,6 +28,21 @@ make          # compiles src/main.c into bin/api
 make clean    # removes the bin/ directory
 ```
 
+## Test
+
+A golden-snapshot test runs the example command stream and checks the program's
+output against a committed baseline:
+
+```sh
+make test
+```
+
+The same check runs in CI on every push and pull request
+(see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)). The baseline lives in
+[`examples/doctor_who.expected.txt`](examples/doctor_who.expected.txt); regenerate it
+with `./bin/api < examples/doctor_who.txt > examples/doctor_who.expected.txt` if the
+example input ever changes.
+
 ## Usage
 
 The program reads commands from `stdin` and writes results to `stdout`:
@@ -115,10 +130,14 @@ The implementation favors incremental, performance-oriented data structures:
 
 ```
 .
+├── .github/
+│   └── workflows/
+│       └── ci.yml                  # build + test on push / pull request
 ├── src/
-│   └── main.c            # the program (single translation unit)
+│   └── main.c                      # the program (single translation unit)
 ├── examples/
-│   └── doctor_who.txt    # a sample command stream
+│   ├── doctor_who.txt              # a sample command stream
+│   └── doctor_who.expected.txt     # expected output for the sample (test baseline)
 ├── Makefile
 ├── README.md
 └── LICENSE
