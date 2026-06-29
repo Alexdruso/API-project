@@ -116,8 +116,9 @@ A larger, runnable command stream is provided in
 
 The implementation favors incremental, performance-oriented data structures:
 
-- **Entities** live in a hash table (`ENTITY_TABLE_SIZE` buckets), each bucket a singly
-  linked list kept sorted by name.
+- **Entities** live in an open-addressing hash table of `entity *` (power-of-two slots,
+  linear-probe, FNV-1a, grown and rehashed at ~0.7 load) — no per-entity chaining, so a
+  lookup touches a contiguous probe sequence rather than chasing list nodes.
 - **Relationships** are stored per entity. For each relationship type an entity takes
   part in, it keeps two compact open-addressing hash sets of `entity *` (stored inline,
   power-of-two, grown and rehashed at ~0.7 load): `targets` (the entities it points to)
