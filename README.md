@@ -178,9 +178,9 @@ make bench      # pip install matplotlib, run the harness, regenerate the plot b
 
 | Implementation | Latency | Peak memory |
 | --- | --- | --- |
-| C (`bin/api`) | **48 ms** | **13 MB** |
-| Python (`python/api.py`) | 278 ms | 26 MB |
-| Ratio (Python / C) | ~5.8× slower | ~2.0× more |
+| C (`bin/api`) | **45 ms** | **13 MB** |
+| Python (`python/api.py`) | 334 ms | 26 MB |
+| Ratio (Python / C) | ~7.4× slower | ~2.0× more |
 
 Plotting every run on a memory-vs-latency scatter, the two implementations form two
 clearly separated clusters: C sits in the fast, light corner; Python trades both away for
@@ -189,8 +189,11 @@ a much shorter, more readable program.
 ![C vs Python latency and peak memory scatter plot](bench/benchmark.png)
 
 (Raw measurements are written to [`bench/results.csv`](bench/results.csv). Absolute
-numbers depend on the machine — note that on this environment RSS has an ~10 MB floor that
-both binaries hit on small inputs, so the memory gap only opens up once the dataset grows.)
+numbers depend on the machine and its current load — this run was captured on a busy shared
+host, which inflates the Python figure (and so the ratio) relative to a quiet baseline; the
+two implementations' *relative* standing is the durable result. RSS also has an ~10 MB floor
+on this environment that both binaries hit on small inputs, so the memory gap only opens up
+once the dataset grows.)
 
 ## Project structure
 
