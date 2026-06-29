@@ -10,24 +10,24 @@
 #define DELREL 4
 #define REPORT 5
 #define END 0
-#define ENTITY_TABLE_SIZE 3001
 #define NAME_BUFFER_SIZE 40
 #define NOT_FOUND -1
 /*data structures definition part*/
 
-/* A monitored node of the graph. */
+/* A monitored node of the graph. Lives in the open-addressing entity table;
+   no intrusive next pointer (the table holds entity* slots directly). */
 typedef struct entity {
   char *name;
   struct relation *relations; /* relation types this entity participates in */
-  struct entity *next;
 } entity;
 
 /* A relation type as seen from a single entity. Adjacency is stored as two
-   compact sorted dynamic arrays of entity* (sorted by entity->name), grown
-   geometrically: `targets` are the entities this one points to, `sources` the
-   entities pointing back at it (the reverse index that lets delent skip the
-   whole-graph scan). incoming_count is the authoritative count of edges
-   entering this entity for this relation. */
+   open-addressing hash tables of entity* (power-of-two `*_cap` slots, NULL =
+   empty, `*_len` live entries), grown and rehashed geometrically: `targets`
+   are the entities this one points to, `sources` the entities pointing back at
+   it (the reverse index that lets delent skip the whole-graph scan).
+   incoming_count is the authoritative count of edges entering this entity for
+   this relation. */
 typedef struct relation {
   char *name;
   unsigned int incoming_count; /* number of edges entering this entity */
@@ -50,6 +50,14 @@ typedef struct relation_max {
 
 // global variables
 relation_max *relation_maxes = NULL;
+/* Entity hash table: open-addressing table of entity* (power-of-two slots,
+   linear probe, name_hash). Global so table_grow's rehash — which reallocates
+   and moves the base pointer — is transparent to every call site. The structs
+   themselves never move; only the slot array does, and all aliases elsewhere
+   hold entity* to the heap structs, so a rehash dangles nothing. */
+entity **entity_table = NULL;
+unsigned int entity_cap = 0;
+unsigned int entity_len = 0;
 /*function definition part*/
 
 /*essential functions*/
@@ -160,6 +168,24 @@ entity *sorted_remove(entity ***arr, unsigned int *len, unsigned int cap,
     t[i] = t[j];
     i = j;
   }
+}
+
+/* Read-only lookup in the global entity table. Must use the exact same hash and
+   linear-probe sequence as sorted_add/sorted_remove (terminating on the first
+   empty slot — valid because backward-shift deletion leaves no tombstones). */
+entity *entity_lookup(char *name) {
+  if (entity_cap == 0 || entity_table == NULL)
+    return NULL;
+
+  unsigned int mask = entity_cap - 1;
+  unsigned int i = name_hash(name) & mask;
+
+  while (entity_table[i] != NULL) {
+    if (strcmp(entity_table[i]->name, name) == 0)
+      return entity_table[i];
+    i = (i + 1) & mask;
+  }
+  return NULL;
 }
 
 /*functions for managing the maxima*/
@@ -337,24 +363,20 @@ void set_new_max(entity *new_leader, relation_max *rel_max, int new_count) {
   rel_max->leader_count = 1;
 }
 
-void recompute_max(relation_max *rel_max, entity **entity_table,
-                   char *relation_name) {
-  entity *ent = NULL;
+void recompute_max(relation_max *rel_max, char *relation_name) {
+  for (unsigned int i = 0; i < entity_cap; i++) {
+    entity *ent = entity_table[i];
+    if (ent == NULL)
+      continue;
 
-  for (int i = 0; i < ENTITY_TABLE_SIZE; i++) {
-    ent = entity_table[i];
-    while (ent != NULL) {
-      relation *rel = find_relation(ent, relation_name);
+    relation *rel = find_relation(ent, relation_name);
 
-      if (rel != NULL && rel->incoming_count > 0) {
-        if (rel->incoming_count == rel_max->max_count) {
-          add_to_max(ent, rel_max);
-        } else if (rel->incoming_count > rel_max->max_count) {
-          set_new_max(ent, rel_max, (int)rel->incoming_count);
-        }
+    if (rel != NULL && rel->incoming_count > 0) {
+      if (rel->incoming_count == rel_max->max_count) {
+        add_to_max(ent, rel_max);
+      } else if (rel->incoming_count > rel_max->max_count) {
+        set_new_max(ent, rel_max, (int)rel->incoming_count);
       }
-
-      ent = ent->next;
     }
   }
 }
@@ -463,24 +485,6 @@ char *read_name_into(char *buffer) {
   return buffer;
 }
 
-/*hash function*/
-
-unsigned int hash(const char *name) {
-  int i = 0;
-  unsigned int value = 0;
-  unsigned int chunk = 0;
-
-  while (name[i] != '\0') {
-    for (int j = 0; j < sizeof(int) && name[i] != '\0'; j++) {
-      chunk = chunk << 8 * sizeof(char);
-      chunk = chunk | (unsigned int)name[i];
-      i++;
-    }
-    value = value + chunk;
-  }
-  return (unsigned int)value;
-}
-
 // functions to handle the report
 
 /*report*/
@@ -527,77 +531,27 @@ int report() {
 }
 
 /*addent*/
-void insert_entity(entity **bucket, char *entity_name) {
-  entity *node = *bucket;
-  entity *new_node;
-
-  if ((node == NULL) || (strcmp(node->name, entity_name) > 0)) {
-    node = malloc(sizeof(entity));
-    node->name = entity_name;
-    node->relations = NULL;
-    node->next = *bucket;
-    *bucket = node;
-    return;
-  } else {
-
-    if (strcmp(node->name, entity_name) == 0) {
-      free(entity_name);
-      return;
-    }
-
-    while (node->next != NULL && (strcmp(node->next->name, entity_name) < 0)) {
-      node = node->next;
-    }
-
-    if (node->next != NULL) {
-      if (strcmp(node->next->name, entity_name) == 0) {
-        free(entity_name);
-        return;
-      }
-    }
-
-    new_node = malloc(sizeof(entity));
-    new_node->name = entity_name;
-    new_node->relations = NULL;
-    new_node->next = node->next;
-    node->next = new_node;
-    return;
-  }
-}
-
-int addent(entity **entity_table) {
-  unsigned int index;
+int addent(void) {
   char *entity_name = read_name();
 
-  index = hash(entity_name) % ENTITY_TABLE_SIZE;
-  insert_entity(&entity_table[index], entity_name);
+  /* sorted_add stores a pre-existing entity*, so construct the node first (with
+     its name set, which sorted_add hashes/compares). If the name is already
+     present sorted_add stores nothing and owns nothing, so free both the node
+     and the just-read name to match the original free-the-duplicate behavior.
+   */
+  entity *e = malloc(sizeof(entity));
+  e->name = entity_name;
+  e->relations = NULL;
+
+  if (sorted_add(&entity_table, &entity_len, &entity_cap, e) == 0) {
+    free(entity_name);
+    free(e);
+  }
 
   return 0;
 }
 
 /*delent*/
-
-entity *pop_entity(entity **bucket, char *entity_name) {
-  entity *node = *(bucket);
-  entity *previous = *(bucket);
-
-  if (node != NULL && strcmp(node->name, entity_name) == 0) {
-    *bucket = node->next;
-    return node;
-  }
-
-  while (node != NULL && strcmp(node->name, entity_name) < 0) {
-    previous = node;
-    node = node->next;
-  }
-
-  if (node == NULL || strcmp(node->name, entity_name) > 0)
-    return NULL;
-
-  previous->next = node->next;
-
-  return node;
-}
 
 relation *pop_first_relation(relation **head) {
   relation *first = *head;
@@ -605,15 +559,14 @@ relation *pop_first_relation(relation **head) {
   return first;
 }
 
-int delent(entity **entity_table) {
+int delent(void) {
   char entity_name[NAME_BUFFER_SIZE];
 
   read_name_into(entity_name);
 
-  unsigned int entity_index = hash(entity_name) % ENTITY_TABLE_SIZE;
-
-  // removed the entity from the hash table
-  entity *deleted_ent = pop_entity(&entity_table[entity_index], entity_name);
+  // removed the entity from the open-addressing table
+  entity *deleted_ent =
+      sorted_remove(&entity_table, &entity_len, entity_cap, entity_name);
   // if the entity was present
 
   if (deleted_ent != NULL) {
@@ -636,7 +589,7 @@ int delent(entity **entity_table) {
         popped_rel->incoming_count = 0;
 
         if (became_empty == 1) {
-          recompute_max(rel_max, entity_table, relation_name);
+          recompute_max(rel_max, relation_name);
         }
       }
 
@@ -661,7 +614,7 @@ int delent(entity **entity_table) {
             int became_empty = remove_from_max(rel_max, target_ent->name);
 
             if (became_empty == 1) {
-              recompute_max(rel_max, entity_table, relation_name);
+              recompute_max(rel_max, relation_name);
             }
           }
         }
@@ -757,19 +710,6 @@ relation *increment_incoming(entity *target, char *relation_name,
   return target_rel;
 }
 
-entity *find_entity(entity *node, char *entity_name) {
-  int comparison = -1;
-
-  while (node != NULL && (comparison = strcmp(node->name, entity_name)) < 0) {
-    node = node->next;
-  }
-
-  if (comparison == 0)
-    return node;
-
-  return NULL;
-}
-
 void add_relation_edge(entity *origin_ent, entity *destination_ent,
                        char *relation_name, relation_max *rel_max) {
 
@@ -790,7 +730,7 @@ void add_relation_edge(entity *origin_ent, entity *destination_ent,
   }
 }
 
-int addrel(entity **entity_table) {
+int addrel(void) {
   char *origin = read_name();
   char *destination = read_name();
   char *relation_name = read_name();
@@ -799,13 +739,10 @@ int addrel(entity **entity_table) {
 
   relation_name = rel_max->name;
 
-  unsigned int index = hash(origin) % ENTITY_TABLE_SIZE;
-
-  entity *origin_ent = find_entity(entity_table[index], origin);
+  entity *origin_ent = entity_lookup(origin);
 
   if (origin_ent != NULL) {
-    index = hash(destination) % ENTITY_TABLE_SIZE;
-    entity *destination_ent = find_entity(entity_table[index], destination);
+    entity *destination_ent = entity_lookup(destination);
 
     if (destination_ent != NULL) {
       add_relation_edge(origin_ent, destination_ent, relation_name, rel_max);
@@ -819,7 +756,7 @@ int addrel(entity **entity_table) {
 
 /*delrel*/
 
-int delrel(entity **entity_table) {
+int delrel(void) {
   char origin[NAME_BUFFER_SIZE];
   char destination[NAME_BUFFER_SIZE];
   char relation_name[NAME_BUFFER_SIZE];
@@ -828,9 +765,7 @@ int delrel(entity **entity_table) {
   read_name_into(destination);
   read_name_into(relation_name);
 
-  unsigned int index = hash(origin) % ENTITY_TABLE_SIZE;
-
-  entity *origin_ent = find_entity(entity_table[index], origin);
+  entity *origin_ent = entity_lookup(origin);
 
   if (origin_ent != NULL) {
     relation *origin_rel = find_relation(origin_ent, relation_name);
@@ -858,7 +793,7 @@ int delrel(entity **entity_table) {
             int became_empty = remove_from_max(rel_max, destination_ent->name);
 
             if (became_empty == 1) {
-              recompute_max(rel_max, entity_table, relation_name);
+              recompute_max(rel_max, relation_name);
             }
           }
         }
@@ -897,16 +832,13 @@ void print_relations(entity *ent) {
   }
 }
 
-void print_entity(entity *ent) {
-  if (ent == NULL)
-    return;
-  printf("Entity %s has the following relations:", ent->name);
-  print_relations(ent);
-  print_entity(ent->next);
-}
-void print_entity_table(entity **entity_table) {
-  for (int i = 0; i < ENTITY_TABLE_SIZE; i++) {
-    print_entity(entity_table[i]);
+void print_entity_table(void) {
+  for (unsigned int i = 0; i < entity_cap; i++) {
+    entity *ent = entity_table[i];
+    if (ent == NULL)
+      continue;
+    printf("Entity %s has the following relations:", ent->name);
+    print_relations(ent);
   }
 }
 void print_maxes() {
@@ -927,23 +859,28 @@ void print_maxes() {
 int main() {
 
   int command = BEGIN;
-  entity *entity_table[ENTITY_TABLE_SIZE] = {NULL};
+  /* Initial cap is a power of two comfortably above the benchmark's ~3000
+     entities (load ~0.37), so the table does not grow mid-run and the latency
+     signal is clean. calloc zeroes -> all slots empty. */
+  entity_cap = 8192;
+  entity_len = 0;
+  entity_table = calloc(entity_cap, sizeof(entity *));
 
   while (command != END) {
     command = get_command();
 
     switch (command) {
     case ADDENT:
-      addent(entity_table);
+      addent();
       break;
     case DELENT:
-      delent(entity_table);
+      delent();
       break;
     case ADDREL:
-      addrel(entity_table);
+      addrel();
       break;
     case DELREL:
-      delrel(entity_table);
+      delrel();
       break;
     case REPORT:
       report();
