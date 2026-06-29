@@ -259,13 +259,25 @@ relation_max *find_relation_max(char *relation_name) {
   return NULL;
 }
 
+/* Heap copy of a (NUL-terminated) name. */
+char *dup_name(const char *name) {
+  size_t n = strlen(name) + 1;
+  char *copy = malloc(n);
+  memcpy(copy, name, n);
+  return copy;
+}
+
+/* `relation_name` is BORROWED (the caller keeps ownership, typically a stack
+   buffer). A new relation_max gets its own heap copy; on a hit nothing is
+   freed. There are only a handful of distinct relation types, so the copy on
+   the create path is rare. */
 relation_max *find_or_create_relation_max(char *relation_name) {
   relation_max *node = relation_maxes;
   relation_max *new_node;
 
   if ((node == NULL) || (strcmp(node->name, relation_name) > 0)) {
     node = malloc(sizeof(relation_max));
-    node->name = relation_name;
+    node->name = dup_name(relation_name);
     node->max_count = 0;
     node->leader_count = 0;
     node->leaders = NULL;
@@ -275,7 +287,6 @@ relation_max *find_or_create_relation_max(char *relation_name) {
   } else {
 
     if (strcmp(node->name, relation_name) == 0) {
-      free(relation_name);
       return node;
     }
 
@@ -286,13 +297,12 @@ relation_max *find_or_create_relation_max(char *relation_name) {
 
     if (node->next != NULL) {
       if (strcmp(node->next->name, relation_name) == 0) {
-        free(relation_name);
         return node->next;
       }
     }
 
     new_node = malloc(sizeof(relation_max));
-    new_node->name = relation_name;
+    new_node->name = dup_name(relation_name);
     new_node->max_count = 0;
     new_node->leader_count = 0;
     new_node->leaders = NULL;
@@ -731,13 +741,18 @@ void add_relation_edge(entity *origin_ent, entity *destination_ent,
 }
 
 int addrel(void) {
-  char *origin = read_name();
-  char *destination = read_name();
-  char *relation_name = read_name();
+  /* All three names are only needed to look things up here; they are not
+     retained. Read them into stack buffers to avoid a malloc/copy/free per
+     edge on the hot path (relation_max keeps its own copy when created). */
+  char origin[NAME_BUFFER_SIZE];
+  char destination[NAME_BUFFER_SIZE];
+  char relation_name[NAME_BUFFER_SIZE];
+
+  read_name_into(origin);
+  read_name_into(destination);
+  read_name_into(relation_name);
 
   relation_max *rel_max = find_or_create_relation_max(relation_name);
-
-  relation_name = rel_max->name;
 
   entity *origin_ent = entity_lookup(origin);
 
@@ -745,12 +760,10 @@ int addrel(void) {
     entity *destination_ent = entity_lookup(destination);
 
     if (destination_ent != NULL) {
-      add_relation_edge(origin_ent, destination_ent, relation_name, rel_max);
+      add_relation_edge(origin_ent, destination_ent, rel_max->name, rel_max);
     }
   }
 
-  free(origin);
-  free(destination);
   return 0;
 }
 
